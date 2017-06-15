@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
 import android.support.annotation.RequiresApi;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -14,6 +15,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.coolweather.android.db.City;
 import com.coolweather.android.db.County;
@@ -36,6 +38,8 @@ import okhttp3.Response;
  */
 
 public class ChooseAreaFragment extends Fragment {
+
+    public static final String TAG="ChooseAreaFragment";
 
     public static final int LEVEL_PROVINCE = 0;
 
@@ -83,15 +87,15 @@ public class ChooseAreaFragment extends Fragment {
      */
     private int currentLevel;
 
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    @Nullable
     @Override
     public View onCreateView(LayoutInflater inflater,  ViewGroup container, Bundle savedInstanceState) {
         View view =inflater.inflate(R.layout.choose_area,container,false);
         titleText = (TextView) view.findViewById(R.id.title_text);
         backButton = (Button) view.findViewById(R.id.back_button);
         listView = (ListView) view.findViewById(R.id.list_view);
-        adapter = new ArrayAdapter<>(getContext(),android.R.layout.simple_list_item_1,dataList);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            adapter = new ArrayAdapter<>(getContext(),android.R.layout.simple_list_item_1,dataList);
+        }
         listView.setAdapter(adapter);
         return  view;
     }
@@ -111,7 +115,7 @@ public class ChooseAreaFragment extends Fragment {
                 }
             }
         });
-        backButton.setOnClickListener(new View.OnClickListener() {
+        backButton.setOnClickListener(new View.OnClickListener() { 
             @Override
             public void onClick(View v) {
                 if (currentLevel == LEVEL_COUNTY){
@@ -152,23 +156,38 @@ public class ChooseAreaFragment extends Fragment {
      */
     private void queryFromServer(String address, final String type) {
         showProgressDialog();
+        Log.d(TAG,"queryFromServer....");
         HttpUtil.sendOkHttpRequest(address, new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
-
+                //通过getActivity().runOnUiThread（）方法回到主线程处理逻辑
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        closeProgressDialog();
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            Toast.makeText(getContext(),"加载失败",Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                });
             }
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
-                String responseText = response.body().toString();
+                String responseText = response.body().string();
+                Log.d(TAG,"responseText::"+responseText);
                 boolean result = false;
                 if ("province".equals(type)){
                     result = Utility.handleProvinceResponse(responseText);
+                    Log.d(TAG,"province:result::"+result);
                 }else if ("city".equals(type)){
                     result = Utility.handleCityResponse(responseText,selectedProvince.getId());
+                    Log.d(TAG,"city:result::"+result);
                 }else if ("county".equals(type)){
                     result = Utility.handleCountyResponse(responseText,selectedCity.getId());
+                    Log.d(TAG,"county:result::"+result);
                 }
+                Log.d(TAG,"result::"+result);
                 if (result){
                     getActivity().runOnUiThread(new Runnable() {
                         @Override
@@ -189,9 +208,18 @@ public class ChooseAreaFragment extends Fragment {
     }
 
     private void closeProgressDialog() {
+        if (progressDialog != null){
+            progressDialog.dismiss();
+        }
     }
 
     private void showProgressDialog() {
+        if (progressDialog == null){
+            progressDialog = new ProgressDialog(getActivity());
+            progressDialog.setMessage("正在加载...");
+            progressDialog.setCanceledOnTouchOutside(false);
+        }
+        progressDialog.show();
     }
 
     /**
@@ -203,7 +231,7 @@ public class ChooseAreaFragment extends Fragment {
         cityList = DataSupport.where("provinceid=?",String.valueOf(selectedProvince.getId())).find(City.class);
         if (cityList.size()>0){
             dataList.clear();
-            for (City city :cityList){
+            for (City city :cityList){ 
                 dataList.add(city.getCityName());
             }
             adapter.notifyDataSetChanged();
@@ -211,7 +239,7 @@ public class ChooseAreaFragment extends Fragment {
             currentLevel = LEVEL_CITY;
         }else {
             int provinceCode = selectedProvince.getProvinceCode();
-            String address = "http://guolin.tech/api/china" + provinceCode;
+            String address = "http://guolin.tech/api/china/" + provinceCode;
             queryFromServer(address,"city");
         }
     }
@@ -234,7 +262,7 @@ public class ChooseAreaFragment extends Fragment {
         }else {
             int provinceCode = selectedProvince.getProvinceCode();
             int cityCode = selectedCity.getCityCode();
-            String address = "http://guolin.tech/api/china" + provinceCode + "/" +cityCode;
+            String address = "http://guolin.tech/api/china/" + provinceCode + "/" +cityCode;
             queryFromServer(address,"county");
         }
     }
